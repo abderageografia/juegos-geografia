@@ -64,8 +64,8 @@ svg{touch-action:manipulation;overflow:hidden}
   transition:fill .15s,stroke .15s
 }
 .province:hover{fill:#f4f7fb}
-.province.selected{fill:#d9f3df;stroke:#2f855a;stroke-width:2.2}
-.province.revealed{fill:#dbeafe;stroke:#2563eb;stroke-width:2}
+.province.selected{fill:#f4f7fb;stroke:#6d8fd6;stroke-width:2}
+.province.revealed{fill:var(--accentSoft);stroke:#6d8fd6;stroke-width:1.8}
 .relief{
   fill:var(--relief);fill-opacity:.56;stroke:#947047;stroke-width:1.3;vector-effect:non-scaling-stroke;
   cursor:pointer;transition:fill .15s,fill-opacity .15s
@@ -100,6 +100,22 @@ svg{touch-action:manipulation;overflow:hidden}
   background:#f9fbfe;padding:20px;text-align:center
 }
 .note{text-align:center;color:#8a95a7;font-size:10px;margin-top:5px}
+.termsGame{max-width:1050px;margin:18px auto 0}
+.definitionCard{
+  min-height:260px;border:2px solid #dce5f7;background:#f7f9fd;border-radius:20px;
+  padding:clamp(24px,4vw,48px);display:flex;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;gap:22px
+}
+.definitionLabel{color:var(--accent);font-size:clamp(15px,1.5vw,20px);font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+.definitionText{font-size:clamp(24px,3vw,42px);line-height:1.25;font-weight:800}
+.termAnswer{font-size:clamp(28px,3.4vw,48px);line-height:1.15;font-weight:950;color:var(--okText);min-height:1.15em}
+.termAnswer.hidden{visibility:hidden}
+.termButtons{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:18px}
+.termButton{border:0;border-radius:13px;padding:15px 24px;font:inherit;font-size:clamp(17px,1.7vw,23px);font-weight:900;cursor:pointer}
+.termButton.reveal{background:var(--accent);color:#fff}
+.termButton.next{background:#eef1f6;color:#27344a}
+.termCounter{text-align:center;color:var(--muted);font-size:clamp(16px,1.5vw,20px);font-weight:800;margin-top:16px}
+body.terms-mode #prompt{display:none}
 @media(max-width:900px){
   .mapGrid{grid-template-columns:1fr}
   .islandCol{grid-template-columns:1fr 1fr;grid-template-rows:auto}
@@ -119,13 +135,14 @@ svg{touch-action:manipulation;overflow:hidden}
 <header class="top">
   <div>
     <h1>Mapas interactivos</h1>
-    <p class="subtitle">En provincias: primer toque en verde; segundo toque revela el nombre y queda en azul.</p>
+    <p class="subtitle">Pulsa cada elemento para descubrir su nombre. Sin examen: pensado para aprender visualmente.</p>
   </div>
   <div class="tabs">
     <button class="tab active" data-tab="provinces">Provincias</button>
     <button class="tab" data-tab="relief">Relieve</button>
     <button class="tab" data-tab="riversSpain">Ríos de España</button>
     <button class="tab" data-tab="riversAndalusia">Ríos de Andalucía</button>
+    <button class="tab" data-tab="terms">Términos</button>
   </div>
 </header>
 
@@ -166,6 +183,21 @@ svg{touch-action:manipulation;overflow:hidden}
   <div class="controls"><span class="progress" id="riversAndProgress"></span><button class="reset" data-reset="riversAndalusia">Ocultar nombres</button></div>
   <div class="note">Cursos simplificados de los principales ríos andaluces.</div>
 </section>
+
+<section class="panel" id="terms">
+  <div class="termsGame">
+    <div class="definitionCard">
+      <div class="definitionLabel">Adivina el término</div>
+      <div class="definitionText" id="termDefinition"></div>
+      <div class="termAnswer hidden" id="termAnswer" aria-live="polite"></div>
+    </div>
+    <div class="termButtons">
+      <button class="termButton reveal" id="revealTerm">Mostrar término</button>
+      <button class="termButton next" id="nextTerm">Siguiente</button>
+    </div>
+    <div class="termCounter" id="termCounter"></div>
+  </div>
+</section>
 </main>
 
 <script>
@@ -174,6 +206,18 @@ const promptEl=document.getElementById("prompt");
 let geoFeatures=[],mainland=[],balear=[],canary=[],andalusia=[];
 let contexts={};
 const revealed={provinces:new Set(),relief:new Set(),riversSpain:new Set(),riversAndalusia:new Set()};
+const TERMS=[
+ {term:"Archipiélago",definition:"Conjunto de islas próximas entre sí y relacionadas geográficamente. En España, Baleares y Canarias constituyen los dos ejemplos principales."},
+ {term:"Escala de un mapa",definition:"Relación matemática entre una distancia medida en una representación cartográfica y su correspondiente distancia real sobre el terreno. Puede expresarse de forma numérica, gráfica o textual."},
+ {term:"Latitud geográfica",definition:"Distancia angular entre un punto de la superficie terrestre y el ecuador. Se mide de 0° a 90° hacia el norte o hacia el sur."},
+ {term:"Longitud geográfica",definition:"Distancia angular entre un punto de la superficie terrestre y el meridiano de Greenwich. Se mide de 0° a 180° hacia el este o hacia el oeste."},
+ {term:"Mapa temático",definition:"Representación cartográfica que muestra la distribución espacial de un fenómeno concreto, como la población, el clima, la vegetación o las actividades económicas."},
+ {term:"Mapa topográfico",definition:"Representación cartográfica detallada de los principales elementos naturales y humanos de la superficie terrestre, como el relieve, la hidrografía, las poblaciones y las vías de comunicación."},
+ {term:"Meridiano",definition:"Línea imaginaria perpendicular al ecuador que une ambos polos y sirve para medir la distancia angular hacia el este o el oeste. La que pasa por Greenwich se toma como referencia de 0°."},
+ {term:"Paralelo",definition:"Círculo imaginario trazado de este a oeste y equidistante del ecuador, utilizado para medir la distancia angular hacia el norte o el sur. El ecuador corresponde a 0°."},
+ {term:"Península",definition:"Extensión de tierra rodeada de agua por casi todos sus lados y unida al continente por una franja terrestre."}
+];
+let termOrder=[],termPosition=0,termsStarted=false;
 let selectedProvincePath=null;
 
 const RELIEF=[
@@ -345,9 +389,32 @@ function drawRivers(svgId,list,type,fs){
  });
  buildList(type==="riversSpain"?"riversSpainList":"riversAndList",list.map(x=>x.name),type)
 }
+function shuffleTerms(){
+ termOrder=TERMS.map((_,i)=>i);
+ for(let i=termOrder.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[termOrder[i],termOrder[j]]=[termOrder[j],termOrder[i]]}
+ termPosition=0;termsStarted=true;showTerm()
+}
+function showTerm(){
+ const item=TERMS[termOrder[termPosition]];
+ document.getElementById("termDefinition").textContent=item.definition;
+ const answer=document.getElementById("termAnswer");answer.textContent=item.term;answer.classList.add("hidden");
+ document.getElementById("revealTerm").textContent="Mostrar término";
+ document.getElementById("termCounter").textContent=`Término ${termPosition+1} de ${TERMS.length}`;
+ document.getElementById("nextTerm").textContent=termPosition===TERMS.length-1?"Volver a empezar":"Siguiente"
+}
+function revealTerm(){
+ document.getElementById("termAnswer").classList.remove("hidden");
+ document.getElementById("revealTerm").textContent="Término mostrado"
+}
+function nextTerm(){
+ if(termPosition===TERMS.length-1){shuffleTerms();return}
+ termPosition++;showTerm()
+}
 function setTab(id){
  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===id));
  document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id===id));
+ document.body.classList.toggle("terms-mode",id==="terms");
+ if(id==="terms"&&!termsStarted)shuffleTerms();
  promptEl.className="prompt empty";promptEl.textContent="Pulsa un elemento del mapa para ver su nombre"
 }
 async function init(){
@@ -366,6 +433,8 @@ async function init(){
 }
 document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
 document.querySelectorAll("[data-reset]").forEach(b=>b.addEventListener("click",()=>resetType(b.dataset.reset)));
+document.getElementById("revealTerm").addEventListener("click",revealTerm);
+document.getElementById("nextTerm").addEventListener("click",nextTerm);
 init();
 </script>
 </body>
